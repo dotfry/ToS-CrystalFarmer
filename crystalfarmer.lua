@@ -1,15 +1,25 @@
 --
 -- Addon for deleting trash items while afk farm.
--- debug: dofile("../addons/crystalfarmer/crystalfarmer.lua");
+local acutil = require('acutil');
 
 crystalFarmer = {
   -- items to remove
   trash = {},
   verbose = false,
+  __maxDebug = false,
+  config = "../addons/crystalfarmer/settings.json",
   weight = 75
 };
-  
+
+-- fast table dumper.
+function crystalFarmer.dump(tbl)
+  for k, v in pairs(tbl) do
+    print(k);
+  end
+end
+
 function crystalFarmer.handleNewItem(invIndex)
+  crystalFarmer.debug("got index " .. invIndex);
   local invItem = session.GetInvItem(invIndex);
   if invItem == nil then
     return;
@@ -20,14 +30,15 @@ function crystalFarmer.handleNewItem(invIndex)
     return;
   end;
   crystalFarmer.lastItem = item; -- for debug
+  -- few debug: print(GetIES(crystalFarmer.lastItem:GetObject()).ClassName)
   
   local clazz = ies.ClassName or "NIL_OBJECT";
   if (crystalFarmer.isTrash(clazz)) then
     if not crystalFarmer.needCleanup() then
-      crystalFarmer.verbose("can delete item " .. clazz .. ", but not required");
+      crystalFarmer.print(string.format("can delete item %s, but not required", clazz));
       return;
     end
-    crystalFarmer.verbose("deleted item " .. clazz .. ".");
+    crystalFarmer.print(string.format("deleted item %s.", clazz));
     crystalFarmer.deleteItem(invItem);
   end;
 end;
@@ -38,7 +49,7 @@ end;
   
 function crystalFarmer.needCleanup()
   local pc = GetMyPCObject();
-  if (pc == null) then
+  if pc == null then
     return true;
   end;
 
@@ -50,14 +61,20 @@ function crystalFarmer.needCleanup()
 end;
 
 -- @param item InventoryItem
-function crystalFarmer.deleteItem(item)
-  item.DropDelete(item:GetIESID());
+function crystalFarmer.deleteItem(obj)
+  item.DropDelete(obj:GetIESID());
 end;
   
-function crystalFarmer.verbose(text)
-  if crystalFarmer.verbose == true then
-    CHAT_SYSTEM("[CrystalFarmer] " .. text);
+function crystalFarmer.print(text, force)
+  if crystalFarmer.verbose or force then
+    CHAT_SYSTEM(string.format("[CrystalFarmer] %s", text));
   end;
+end;
+
+function crystalFarmer.debug(text)
+  if crystalFarmer.__maxDebug then
+    crystalFarmer.print(text, true);
+  end
 end;
   
 function crystalFarmer.setConfig(cfg)
@@ -71,23 +88,58 @@ function crystalFarmer.setConfig(cfg)
 end;
 
 function crystalFarmer.loadConfig()
-  local acutil, file = require('acutil'), "../addons/crystalfarmer/settings.json";
-  local t, err = acutil.loadJSON(file);
+  local t, err = acutil.loadJSON(crystalFarmer.config);
   if (err) then
-    CHAT_SYSTEM(string.format("[CrystalFarmer] can't load config (%s).", file));
+    crystalFarmer.print(string.format("[CrystalFarmer] can't load config (%s).", crystalFarmer.config), true);
   else
+    crystalFarmer.debug("loading config");
     crystalFarmer.setConfig(t);
   end;
-end
+end;
+
+function crystalFarmer.saveConfig()
+  local conf = { verbose = crystalFarmer.verbose, weight = crystalFarmer.weight, classes = {} };
+  for clazz, enabled in pairs(crystalFarmer.trash) do
+    if enabled then
+      table.insert(conf.classes, clazz);
+    end
+  end
+  acutil.saveJSON(crystalFarmer.config, conf);
+end;
+
+--------------------------
+-- ADDON INITIALIZATION --
+--------------------------
+local loaded = false;
+
+local function handleSlashCommand(args)
+  local command = string.lower(table.remove(args, 1) or '');
+  if command ~= 'add' and command ~= 'del' then
+    ui.MsgBox('Usage:{nl}add CLASSNAME{nl}del CLASSNAME', "", "Nope");
+    return;
+  end;
+
+  crystalFarmer.trash[string.upper(table.remove(args, 1) or '')] = command == 'add';
+  crystalFarmer.saveConfig();
+end;
 
 -- Game call this method every time after switching channel, loggin in.
 function CRYSTALFARMER_ON_INIT(addon, frame)
-  crystalFarmer.loadConfig();
+  if loaded then
+    return;
+  end;
   addon:RegisterMsg('INV_ITEM_ADD', 'CRYSTALFARMER_ON_MESSAGE');
+  crystalFarmer.loadConfig();
+  crystalFarmer.print("loaded!", true);
+  
+  acutil.slashCommand('/cf', handleSlashCommand);
+  
+  loaded = true;
 end;
 
 -- Handling incoming message
 function CRYSTALFARMER_ON_MESSAGE(frame, msg, arg1, arg2)
+  crystalFarmer.debug(string.format("messageLoop (%s)", msg));
   if msg == 'INV_ITEM_ADD' then
     crystalFarmer.handleNewItem(arg2);
   end;
