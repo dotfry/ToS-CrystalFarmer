@@ -19,7 +19,6 @@ function crystalFarmer.dump(tbl)
 end
 
 function crystalFarmer.handleNewItem(invIndex)
-  crystalFarmer.debug("got index " .. invIndex);
   local invItem = session.GetInvItem(invIndex);
   if invItem == nil then
     return;
@@ -29,10 +28,10 @@ function crystalFarmer.handleNewItem(invIndex)
   if ies == null then
     return;
   end;
-  crystalFarmer.lastItem = item; -- for debug
+  crystalFarmer.lastItem = invItem; -- for debug
   -- few debug: print(GetIES(crystalFarmer.lastItem:GetObject()).ClassName)
   
-  local clazz = ies.ClassName or "NIL_OBJECT";
+  local clazz = ies.ClassName or "UNKNOWN, SKIP";
   if (crystalFarmer.isTrash(clazz)) then
     if not crystalFarmer.needCleanup() then
       crystalFarmer.print(string.format("can delete item %s, but not required", clazz));
@@ -67,7 +66,7 @@ end;
   
 function crystalFarmer.print(text, force)
   if crystalFarmer.verbose or force then
-    CHAT_SYSTEM(string.format("[CrystalFarmer] %s", text));
+    CHAT_SYSTEM(string.format('[CrystalFarmer] %s', text or ''));
   end;
 end;
 
@@ -78,7 +77,7 @@ function crystalFarmer.debug(text)
 end;
   
 function crystalFarmer.setConfig(cfg)
-  local classes = cfg["classes"] or {};
+  local classes = cfg['classes'] or {};
   for _, v in pairs(classes) do
     crystalFarmer.trash[v] = true;
   end;
@@ -92,7 +91,7 @@ function crystalFarmer.loadConfig()
   if (err) then
     crystalFarmer.print(string.format("[CrystalFarmer] can't load config (%s).", crystalFarmer.config), true);
   else
-    crystalFarmer.debug("loading config");
+    crystalFarmer.debug('loading config');
     crystalFarmer.setConfig(t);
   end;
 end;
@@ -107,15 +106,17 @@ function crystalFarmer.saveConfig()
   acutil.saveJSON(crystalFarmer.config, conf);
 end;
 
---------------------------
--- ADDON INITIALIZATION --
---------------------------
-local loaded = false;
-
 local function handleSlashCommand(args)
   local command = string.lower(table.remove(args, 1) or '');
+
+  if command == 'weight' then
+    crystalFarmer.weight = math.floor(tonumber(number) or crystalFarmer.weight);
+    crystalFarmer.saveConfig();
+    return;
+  end;
+
   if command ~= 'add' and command ~= 'del' then
-    ui.MsgBox('Usage:{nl}add CLASSNAME{nl}del CLASSNAME', "", "Nope");
+    ui.MsgBox('Usage:{nl}add CLASSNAME{nl}del CLASSNAME{nl}weight [percent]', '', 'Nope');
     return;
   end;
 
@@ -123,23 +124,21 @@ local function handleSlashCommand(args)
   crystalFarmer.saveConfig();
 end;
 
+--------------------------
+-- ADDON INITIALIZATION --
+--------------------------
 -- Game call this method every time after switching channel, loggin in.
 function CRYSTALFARMER_ON_INIT(addon, frame)
-  if loaded then
-    return;
-  end;
   addon:RegisterMsg('INV_ITEM_ADD', 'CRYSTALFARMER_ON_MESSAGE');
   crystalFarmer.loadConfig();
   crystalFarmer.print("loaded!", true);
   
   acutil.slashCommand('/cf', handleSlashCommand);
-  
-  loaded = true;
 end;
 
 -- Handling incoming message
 function CRYSTALFARMER_ON_MESSAGE(frame, msg, arg1, arg2)
-  crystalFarmer.debug(string.format("messageLoop (%s)", msg));
+  crystalFarmer.debug(string.format('messageLoop (%s)', msg or 'NIL'));
   if msg == 'INV_ITEM_ADD' then
     crystalFarmer.handleNewItem(arg2);
   end;
